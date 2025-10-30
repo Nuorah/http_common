@@ -5,7 +5,7 @@ pub const Route = struct {
     method: http.Method,
     path: []const u8,
     handler: *const fn (std.mem.Allocator, *http.Server.Request) anyerror!void,
-    match: enum { exact, prefix },
+    match: enum { exact, prefix } = .exact,
 };
 
 pub fn Router(comptime routes: []const Route) type {
