@@ -6,9 +6,11 @@ comptime array and you can pass a context object with a custom type.
 
 # Quick start
 1. Add the dependency in build.zig.zon and build.zig
-2. Import `http_common = @import("http_common")`
 3. Basic server:
 ```zig
+  const std = @import("std");
+  const http_common = @import("http_common");
+
   pub const config: http_common.server.ServerConfiguration = .{
     .port = 8080,
   };
@@ -32,5 +34,4 @@ comptime array and you can pass a context object with a custom type.
   pub fn handleHome(_: std.mem.Allocator, _: *Context, req: *http.Server.Request) !void {
     try req.respond("Hello world!", .{});
   }
-````
-
+```
