@@ -8,7 +8,7 @@ comptime array and you can pass a context object with a custom type.
 1. Add the dependency in build.zig.zon and build.zig
 2. Import `http_common = @import("http_common")`
 3. Basic server:
-```
+```zig
   pub const config: http_common.server.ServerConfiguration = .{
     .port = 8080,
   };
