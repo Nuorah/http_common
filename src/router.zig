@@ -1,29 +1,29 @@
 const std = @import("std");
 const http = std.http;
 
-pub const Route = struct {
-    method: http.Method,
-    path: []const u8,
-    handler: *const fn (std.mem.Allocator, *http.Server.Request) anyerror!void,
-    match: enum { exact, prefix } = .exact,
-};
-
-pub fn Router(comptime routes: []const Route) type {
+pub fn Route(comptime Context: type) type {
     return struct {
-        pub fn route(allocator: std.mem.Allocator, request: *http.Server.Request) !void {
+        method: http.Method,
+        path: []const u8,
+        handler: *const fn (std.mem.Allocator, *Context, *http.Server.Request) anyerror!void,
+        match: enum { exact, prefix } = .exact,
+    };
+}
+pub fn Router(comptime context: type, comptime routes: []const Route(context)) type {
+    return struct {
+        pub fn route(allocator: std.mem.Allocator, ctx: *context, request: *http.Server.Request) !void {
             inline for (routes) |r| {
-                if (r.method != request.head.method) continue;
+                if (r.method == request.head.method) {
+                    const matches = switch (r.match) {
+                        .exact => std.mem.eql(u8, r.path, request.head.target),
+                        .prefix => std.mem.startsWith(u8, request.head.target, r.path),
+                    };
 
-                const matches = switch (r.match) {
-                    .exact => std.mem.eql(u8, r.path, request.head.target),
-                    .prefix => std.mem.eql(u8, r.path, request.head.target),
-                };
-
-                if (matches) {
-                    return r.handler(allocator, request);
+                    if (matches) {
+                        return r.handler(allocator, ctx, request);
+                    }
                 }
             }
-
             try request.respond("Not found.", .{ .status = .not_found });
         }
     };

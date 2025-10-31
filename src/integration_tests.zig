@@ -6,24 +6,28 @@ const router = @import("router.zig");
 const helpers = @import("test_helpers.zig");
 const Route = router.Route;
 
-fn handle(_: std.mem.Allocator, req: *http.Server.Request) !void {
+const Context = struct {};
+
+fn handle(_: std.mem.Allocator, _: *Context, req: *http.Server.Request) !void {
     try req.respond("Hello, World!", .{});
 }
 
-const routes = [_]Route{
+const routes = [_]Route(Context){
     .{ .method = .GET, .path = "/", .handler = handle },
 };
 
-const TestRouter = router.Router(&routes);
+const TestRouter = router.Router(Context, &routes);
 
 test "server handles basic GET request" {
     const allocator = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
+    var ctx = Context{};
     var shutdown = std.atomic.Value(bool).init(false);
 
-    var testServer = try helpers.TestServer.start(arena.allocator(), 9876, TestRouter.route, &shutdown);
+    const TestServer = helpers.TestServer(Context);
+    var testServer = try TestServer.start(arena.allocator(), 9876, &ctx, &TestRouter.route, &shutdown);
     defer {
         testServer.stop();
     }
@@ -50,9 +54,11 @@ test "server handles basic GET request 404" {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
+    var ctx = Context{};
     var shutdown = std.atomic.Value(bool).init(false);
 
-    var testServer = try helpers.TestServer.start(arena.allocator(), 9876, TestRouter.route, &shutdown);
+    const TestServer = helpers.TestServer(Context);
+    var testServer = try TestServer.start(arena.allocator(), 9876, &ctx, TestRouter.route, &shutdown);
     defer {
         testServer.stop();
     }

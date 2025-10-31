@@ -1,6 +1,7 @@
 const std = @import("std");
 const net = std.net;
 const http = std.http;
+const router_lib = @import("router.zig");
 
 pub const ServerConfiguration = struct {
     address: []const u8 = "127.0.0.1",
@@ -8,12 +9,64 @@ pub const ServerConfiguration = struct {
     thread_multiplier: usize = 2,
 };
 
-pub const RequestRouter = *const fn (std.mem.Allocator, *http.Server.Request) anyerror!void;
+pub fn RequestRouter(comptime Context: type) type {
+    return *const fn (
+        std.mem.Allocator,
+        *Context,
+        *http.Server.Request,
+    ) anyerror!void;
+}
+
+pub fn WorkerThread(comptime Context: type) type {
+    return struct {
+        pub fn run(
+            thread_id: usize,
+            main_allocator: std.mem.Allocator,
+            listener: *net.Server,
+            context: *Context,
+            router: RequestRouter(Context),
+            shutdown: *const std.atomic.Value(bool),
+        ) !void {
+            var arena_allocator = std.heap.ArenaAllocator.init(main_allocator);
+            defer arena_allocator.deinit();
+
+            std.log.debug("Thread {} reporting for duty\n", .{thread_id});
+
+            while (!shutdown.load(.acquire)) {
+                const connection = listener.accept() catch |err| switch (err) {
+                    error.WouldBlock => continue,
+                    else => {
+                        std.log.err("Thread {}: Accept failed: {}", .{ thread_id, err });
+                        continue;
+                    },
+                };
+                defer connection.stream.close();
+
+                const no_timeout = std.posix.timeval{ .sec = 0, .usec = 0 };
+                std.posix.setsockopt(
+                    connection.stream.handle,
+                    std.posix.SOL.SOCKET,
+                    std.posix.SO.RCVTIMEO,
+                    std.mem.asBytes(&no_timeout),
+                ) catch |err| {
+                    std.log.err("Thread {}: Failed to clear timeout: {}", .{ thread_id, err });
+                    continue;
+                };
+
+                handleConnection(Context, &arena_allocator, connection.stream, context, router, shutdown) catch |err| {
+                    std.log.err("Thread {}: Connection failed {}", .{ thread_id, err });
+                };
+            }
+        }
+    };
+}
 
 pub fn runServer(
+    comptime Context: type,
     allocator: std.mem.Allocator,
     config: ServerConfiguration,
-    handler: RequestRouter,
+    context: *Context,
+    router: RequestRouter(Context),
     shutdown: *const std.atomic.Value(bool),
 ) !void {
     const address = try net.Address.parseIp(config.address, config.port);
@@ -42,8 +95,14 @@ pub fn runServer(
     const threads = try allocator.alloc(std.Thread, thread_count);
     defer allocator.free(threads);
 
+    const Worker = WorkerThread(Context);
+
     for (threads, 0..) |*thread, i| {
-        thread.* = try std.Thread.spawn(.{}, workerThread, .{ i, allocator, &listener, handler, shutdown });
+        thread.* = try std.Thread.spawn(
+            .{},
+            Worker.run,
+            .{ i, allocator, &listener, context, router, shutdown },
+        );
     }
 
     for (threads) |thread| {
@@ -51,49 +110,12 @@ pub fn runServer(
     }
 }
 
-fn workerThread(
-    thread_id: usize,
-    main_allocator: std.mem.Allocator,
-    listener: *net.Server,
-    handler: RequestRouter,
-    shutdown: *const std.atomic.Value(bool),
-) !void {
-    var arena_allocator = std.heap.ArenaAllocator.init(main_allocator);
-    defer arena_allocator.deinit();
-
-    std.log.debug("Thread {} reporting for duty\n", .{thread_id});
-
-    while (!shutdown.load(.acquire)) {
-        const connection = listener.accept() catch |err| switch (err) {
-            error.WouldBlock => continue,
-            else => {
-                std.log.err("Thread {}: Accept failed: {}", .{ thread_id, err });
-                continue;
-            },
-        };
-        defer connection.stream.close();
-
-        const no_timeout = std.posix.timeval{ .sec = 0, .usec = 0 };
-        std.posix.setsockopt(
-            connection.stream.handle,
-            std.posix.SOL.SOCKET,
-            std.posix.SO.RCVTIMEO,
-            std.mem.asBytes(&no_timeout),
-        ) catch |err| {
-            std.log.err("Thread {}: Failed to clear timeout: {}", .{ thread_id, err });
-            continue;
-        };
-
-        handleConnection(&arena_allocator, connection.stream, handler, shutdown) catch |err| {
-            std.log.err("Thread {}: Connection failed {}", .{ thread_id, err });
-        };
-    }
-}
-
 fn handleConnection(
+    comptime Context: type,
     arena: *std.heap.ArenaAllocator,
     stream: net.Stream,
-    handler: RequestRouter,
+    context: *Context,
+    router: RequestRouter(Context),
     shutdown: *const std.atomic.Value(bool),
 ) !void {
     var in_buf: [2048]u8 = undefined;
@@ -115,7 +137,7 @@ fn handleConnection(
             }
         };
 
-        try handler(arena.allocator(), &request);
+        try router(arena.allocator(), context, &request);
         _ = arena.reset(.{ .retain_with_limit = 32 * 1024 });
 
         if (!request.head.keep_alive) break;
