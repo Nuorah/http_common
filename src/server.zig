@@ -42,12 +42,12 @@ pub fn WorkerThread(comptime Context: type) type {
                 };
                 defer connection.stream.close();
 
-                const no_timeout = std.posix.timeval{ .sec = 0, .usec = 0 };
+                const connection_timeout = std.posix.timeval{ .sec = 180, .usec = 0 };
                 std.posix.setsockopt(
                     connection.stream.handle,
                     std.posix.SOL.SOCKET,
                     std.posix.SO.RCVTIMEO,
-                    std.mem.asBytes(&no_timeout),
+                    std.mem.asBytes(&connection_timeout),
                 ) catch |err| {
                     std.log.err("Thread {}: Failed to clear timeout: {}", .{ thread_id, err });
                     continue;
