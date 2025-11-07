@@ -8,7 +8,7 @@ const Route = router.Route;
 
 const Context = struct {};
 
-fn handle(_: std.mem.Allocator, _: *Context, req: *http.Server.Request) !void {
+fn handle(_: std.mem.Allocator, _: std.mem.Allocator, _: *Context, req: *http.Server.Request) !void {
     try req.respond("Hello, World!", .{});
 }
 
@@ -19,7 +19,7 @@ const routes = [_]Route(Context){
 const TestRouter = router.Router(Context, &routes);
 
 test "server handles basic GET request" {
-    const allocator = testing.allocator;
+    var allocator = testing.allocator;
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 

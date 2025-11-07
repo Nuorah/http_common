@@ -12,6 +12,7 @@ pub const ServerConfiguration = struct {
 pub fn RequestRouter(comptime Context: type) type {
     return *const fn (
         std.mem.Allocator,
+        std.mem.Allocator,
         *Context,
         *http.Server.Request,
     ) anyerror!void;
@@ -53,7 +54,7 @@ pub fn WorkerThread(comptime Context: type) type {
                     continue;
                 };
 
-                handleConnection(Context, &arena_allocator, connection.stream, context, router, shutdown) catch |err| {
+                handleConnection(Context, main_allocator, &arena_allocator, connection.stream, context, router, shutdown) catch |err| {
                     std.log.err("Thread {}: Connection failed {}", .{ thread_id, err });
                 };
             }
@@ -112,6 +113,7 @@ pub fn runServer(
 
 fn handleConnection(
     comptime Context: type,
+    main_allocator: std.mem.Allocator,
     arena: *std.heap.ArenaAllocator,
     stream: net.Stream,
     context: *Context,
@@ -137,7 +139,7 @@ fn handleConnection(
             }
         };
 
-        try router(arena.allocator(), context, &request);
+        try router(main_allocator, arena.allocator(), context, &request);
         _ = arena.reset(.{ .retain_with_limit = 32 * 1024 });
 
         if (!request.head.keep_alive) break;
