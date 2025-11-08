@@ -8,7 +8,14 @@ const Route = router.Route;
 
 const Context = struct {};
 
-fn handle(_: std.mem.Allocator, _: std.mem.Allocator, _: *Context, req: *http.Server.Request) !void {
+fn handle(
+    _: std.mem.Allocator,
+    _: std.mem.Allocator,
+    _: *Context,
+    req: *http.Server.Request,
+    _: std.StringHashMap([]const u8),
+    _: std.StringHashMap([]const u8),
+) !void {
     try req.respond("Hello, World!", .{});
 }
 
