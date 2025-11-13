@@ -15,6 +15,7 @@ pub fn RequestRouter(comptime Context: type) type {
         std.mem.Allocator,
         *Context,
         *http.Server.Request,
+        bool,
     ) anyerror!void;
 }
 
@@ -128,6 +129,9 @@ fn handleConnection(
 
     var server = http.Server.init(reader.interface(), &writer.interface);
 
+    const max_requests_per_connection = 100;
+    var requests_handled: usize = 0;
+
     while (!shutdown.load(.acquire)) {
         var request = server.receiveHead() catch |err| {
             switch (err) {
@@ -138,10 +142,12 @@ fn handleConnection(
                 },
             }
         };
-
-        try router(main_allocator, arena.allocator(), context, &request);
+        requests_handled += 1;
+        const should_close = requests_handled >= max_requests_per_connection or !request.head.keep_alive;
+        try router(main_allocator, arena.allocator(), context, &request, should_close);
+        try writer.interface.flush();
         _ = arena.reset(.{ .retain_with_limit = 32 * 1024 });
 
-        if (!request.head.keep_alive) break;
+        if (should_close) break;
     }
 }

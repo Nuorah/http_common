@@ -1,6 +1,24 @@
 const std = @import("std");
 const http = std.http;
 
+pub const Response = struct {
+    pub const Self = @This();
+
+    body: []const u8,
+    status: http.Status = .ok,
+    extra_headers: []const http.Header = &.{},
+
+    pub fn json(body: []const u8) Self {
+        return Self{
+            .body = body,
+            .status = .ok,
+            .extra_headers = &.{
+                .{ .name = "content-type", .value = "application/json" },
+            },
+        };
+    }
+};
+
 pub fn Route(comptime Context: type) type {
     return struct {
         method: http.Method,
@@ -12,7 +30,7 @@ pub fn Route(comptime Context: type) type {
             *http.Server.Request,
             std.StringHashMap([]const u8),
             std.StringHashMap([]const u8),
-        ) anyerror!void,
+        ) anyerror!Response,
         match: enum { exact, prefix, pattern } = .exact,
     };
 }
@@ -24,6 +42,7 @@ pub fn Router(comptime context: type, comptime routes: []const Route(context)) t
             arena: std.mem.Allocator,
             ctx: *context,
             request: *http.Server.Request,
+            should_close: bool,
         ) !void {
             const split = splitPathQuery(request.head.target);
             inline for (routes) |r| {
@@ -41,13 +60,42 @@ pub fn Router(comptime context: type, comptime routes: []const Route(context)) t
                     };
 
                     if (matches) {
-                        return r.handler(main_allocator, arena, ctx, request, path_params, query_params);
+                        const response = try r.handler(main_allocator, arena, ctx, request, path_params, query_params);
+                        return respond(arena, request, response, should_close);
                     }
                 }
             }
-            try request.respond("Not found.", .{ .status = .not_found });
+            const not_found = Response{
+                .body = "Not found.",
+                .status = .not_found,
+            };
+            try respond(arena, request, not_found, should_close);
         }
     };
+}
+
+fn respond(
+    arena: std.mem.Allocator,
+    request: *http.Server.Request,
+    response: Response,
+    should_close: bool,
+) !void {
+    if (should_close) {
+        // Allocate new header array with Connection: close appended
+        var headers: std.ArrayList(http.Header) = .empty;
+        try headers.appendSlice(arena, response.extra_headers);
+        try headers.append(arena, .{ .name = "connection", .value = "close" });
+
+        try request.respond(response.body, .{
+            .status = response.status,
+            .extra_headers = headers.items,
+        });
+    } else {
+        try request.respond(response.body, .{
+            .status = response.status,
+            .extra_headers = response.extra_headers,
+        });
+    }
 }
 
 fn isParam(segment: []const u8) bool {

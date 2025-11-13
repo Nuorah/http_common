@@ -12,11 +12,14 @@ fn handle(
     _: std.mem.Allocator,
     _: std.mem.Allocator,
     _: *Context,
-    req: *http.Server.Request,
+    _: *http.Server.Request,
     _: std.StringHashMap([]const u8),
     _: std.StringHashMap([]const u8),
-) !void {
-    try req.respond("Hello, World!", .{});
+) !router.Response {
+    return router.Response{
+        .body = "Hello, World!",
+        .status = .ok,
+    };
 }
 
 const routes = [_]Route(Context){
