@@ -1,6 +1,6 @@
 .{
     .name = .http_common,
-    .version = "0.3.0",
+    .version = "0.3.1",
     .fingerprint = 0xfe9ea896bd53ea8d,
     .paths = .{
         "build.zig",
